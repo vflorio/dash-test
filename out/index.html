@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DASH Samsung compat test</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, sans-serif; margin: 1rem; background:#111; color:#eee; }
+  h1 { font-size: 1.3rem; }
+  .wrap { display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-start; }
+  .left { flex:1 1 520px; min-width:320px; }
+  .right { flex:1 1 360px; min-width:300px; }
+  video { width:100%; background:#000; border:1px solid #333; }
+  .controls { margin:.6rem 0; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+  button { cursor:pointer; padding:.4rem .7rem; background:#2a2a2a; color:#eee;
+           border:1px solid #444; border-radius:4px; }
+  button:hover { background:#333; }
+  button.primary { background:#1d6fe0; border-color:#1d6fe0; }
+  ul { list-style:none; padding:0; margin:0; }
+  li { display:flex; gap:.5rem; align-items:flex-start; padding:.35rem .4rem;
+       border-bottom:1px solid #222; }
+  li.active { background:#15233b; }
+  .dot { flex:0 0 auto; width:.8rem; height:.8rem; border-radius:50%;
+         margin-top:.25rem; background:#555; }
+  .dot.ok { background:#2ecc71; } .dot.err { background:#e74c3c; }
+  .dot.stall { background:#f39c12; } .dot.play { background:#1d6fe0;
+         animation:pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .vname { font-weight:600; min-width:170px; }
+  .vname button { width:100%; text-align:left; }
+  .vdesc { opacity:.75; font-size:.85rem; }
+  .vres { margin-left:auto; font-size:.8rem; opacity:.9; white-space:nowrap; }
+  #log { width:100%; height:220px; background:#000; color:#9f9; border:1px solid #333;
+         font-family:ui-monospace, monospace; font-size:.78rem; padding:.4rem; }
+  label.quick { font-size:.85rem; opacity:.85; }
+  code { color:#6cf; }
+</style>
+<script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
+</head>
+<body>
+<h1>DASH Samsung / HbbTV &mdash; banco di test varianti</h1>
+<p>Smoke test locale via dash.js. <strong>Play all</strong> riproduce gli MPD uno
+per uno e segna OK / ERRORE / STALLO. Sulla TV Samsung apri invece l'URL del
+singolo <code>.mpd</code> nell'app HbbTV.</p>
+<p style="color:#f39c12;font-size:.85rem">Nota: serve un browser con decoder
+<strong>AAC/HE-AAC</strong> (Chrome o Edge). Il browser integrato di VS Code e
+alcune build Chromium OSS non includono AAC e daranno
+<code>audio decoder initialization failed</code> su tutte le varianti.</p>
+<div class="wrap">
+  <div class="left">
+    <video id="v" controls muted playsinline></video>
+    <div class="controls">
+      <button id="playAll" class="primary">&#9654; Play all</button>
+      <button id="skip">&#9197; Skip</button>
+      <button id="stop">&#9209; Stop</button>
+      <label class="quick"><input type="checkbox" id="quick" checked>
+        modalita' rapida: avanza dopo <input type="number" id="quickSecs" value="15"
+        min="3" max="120" style="width:3.2rem"> s</label>
+    </div>
+    <div id="summary" class="controls"></div>
+    <ul id="list"></ul>
+  </div>
+  <div class="right">
+    <h2 style="font-size:1rem">Log</h2>
+    <textarea id="log" readonly></textarea>
+    <div class="controls">
+      <button id="clearLog">Pulisci log</button>
+      <span id="dashver" style="font-size:.8rem;opacity:.7"></span>
+    </div>
+  </div>
+</div>
+<script>
+  var VARIANTS = [{"name": "v00_baseline", "desc": "Riproduzione fedele del manifest rotto: multi-periodo, lingua pol->und, scanType interlaced solo sul Period0, HE-AAC, nessun segnale di continuita'. ATTESO: fallisce su Samsung."}, {"name": "v01_consistent_audio_lang", "desc": "Come baseline ma stessa lingua audio su entrambi i periodi (pol/pol). Isola l'ipotesi 'cambio @lang al period boundary'."}, {"name": "v02_progressive_no_scantype", "desc": "Come baseline ma nessun scanType interlaced (video progressivo coerente tra i periodi). Isola l'ipotesi interlaced."}, {"name": "v03_period_continuity", "desc": "Come baseline + lingua coerente + SupplementalProperty period-continuity:2015 e AdaptationSet @id costanti tra periodi. Isola l'ipotesi 'manca il segnale di transizione seamless'."}, {"name": "v04_aac_lc", "desc": "Come baseline ma audio AAC-LC (mp4a.40.2) invece di HE-AAC (mp4a.40.5). Isola l'ipotesi codec audio."}, {"name": "v05_single_period", "desc": "Contenuto+spot concatenati in un UNICO periodo progressivo. Controllo: elimina del tutto la transizione di periodo."}, {"name": "v06_all_fixes", "desc": "Tutte le correzioni insieme: progressivo, lingua coerente, AAC-LC, period-continuity + AdaptationSet @id costanti. Candidato manifest che DOVREBBE funzionare su Samsung."}, {"name": "v07_missing_lang_attr", "desc": "Come baseline ma l'AdaptationSet audio dello spot NON ha affatto l'attributo @lang (invece di 'und'). Isola il secondo MPD rotto: @lang assente != @lang=und per i parser Tizen."}, {"name": "v08_many_periods", "desc": "Molti periodi (10) content/spot alternati, TUTTI interlacciati, HE-AAC, lingua coerente pol ovunque. Isola l'ipotesi 'sono le tante transizioni di periodo / re-init a rompere', non l'interlacciamento ne' il cambio di lingua."}, {"name": "v09_faithful_v2", "desc": "Replica fedele del SECONDO MPD rotto: 10 periodi, tutti interlacciati, HE-AAC, @lang=pol sul contenuto e ASSENTE sugli spot, BaseURL distinta per periodo. ATTESO: fallisce su Samsung."}];
+  var E = dashjs.MediaPlayer.events;
+  var video = document.getElementById('v');
+  var listEl = document.getElementById('list');
+  var logEl = document.getElementById('log');
+  var summaryEl = document.getElementById('summary');
+  var player = dashjs.MediaPlayer().create();
+  player.initialize(video, null, false);
+  document.getElementById('dashver').textContent = 'dash.js ' + dashjs.Version;
+
+  var results = {};          // name -> {status, note}
+  var runAll = false;        // true durante una sessione "Play all"
+  var current = -1;          // indice della variante in riproduzione
+  var watchdog = null;       // interval di sorveglianza stallo/durata
+  var lastT = 0, lastMove = 0, startedAt = 0, finished = false;
+  var STALL_LIMIT = 12000;   // ms senza avanzamento del currentTime => stallo
+
+  function log(msg) {
+    var ts = new Date().toISOString().substr(11, 12);
+    logEl.value += '[' + ts + '] ' + msg + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function renderList() {
+    listEl.innerHTML = '';
+    VARIANTS.forEach(function (v, i) {
+      var r = results[v.name] || {};
+      var li = document.createElement('li');
+      li.id = 'row-' + i;
+      if (i === current) li.className = 'active';
+      var cls = r.status === 'ok' ? 'ok' : r.status === 'error' ? 'err'
+              : r.status === 'stall' ? 'stall' : i === current ? 'play' : '';
+      li.innerHTML =
+        '<span class="dot ' + cls + '"></span>' +
+        '<span class="vname"><button data-i="' + i + '">' + v.name + '</button></span>' +
+        '<span class="vdesc">' + v.desc + '</span>' +
+        '<span class="vres">' + (r.note || '') + '</span>';
+      listEl.appendChild(li);
+    });
+    listEl.querySelectorAll('button[data-i]').forEach(function (b) {
+      b.onclick = function () { runAll = false; startVariant(+b.dataset.i); };
+    });
+  }
+
+  function renderSummary() {
+    var ok = 0, err = 0, st = 0, done = 0;
+    VARIANTS.forEach(function (v) {
+      var s = (results[v.name] || {}).status;
+      if (s && s !== 'playing') done++;
+      if (s === 'ok') ok++; else if (s === 'error') err++; else if (s === 'stall') st++;
+    });
+    summaryEl.textContent = 'Testati ' + done + '/' + VARIANTS.length +
+      '  \u2022  OK ' + ok + '  \u2022  ERRORE ' + err + '  \u2022  STALLO ' + st;
+  }
+
+  function clearWatchdog() { if (watchdog) { clearInterval(watchdog); watchdog = null; } }
+
+  function finishVariant(status, note) {
+    if (finished) return;
+    finished = true;
+    clearWatchdog();
+    var v = VARIANTS[current];
+    if (v) {
+      results[v.name] = { status: status, note: note || status };
+      log(v.name + ' => ' + status.toUpperCase() + (note ? ' (' + note + ')' : ''));
+    }
+    renderList(); renderSummary();
+    if (runAll) {
+      if (current + 1 < VARIANTS.length) {
+        setTimeout(function () { startVariant(current + 1); }, 600);
+      } else {
+        runAll = false;
+        log('--- Play all completato ---');
+      }
+    }
+  }
+
+  function startVariant(i) {
+    clearWatchdog();
+    current = i; finished = false;
+    var v = VARIANTS[i];
+    var url = v.name + '.mpd';
+    results[v.name] = { status: 'playing', note: '' };
+    renderList(); renderSummary();
+    log('> ' + v.name + '  (' + url + ')');
+    lastT = 0; lastMove = Date.now(); startedAt = Date.now();
+    try {
+      player.attachSource(url);
+      player.setMute(true);
+      var p = video.play();
+      if (p && p.catch) p.catch(function () {});
+    } catch (e) {
+      finishVariant('error', 'attach: ' + e.message);
+      return;
+    }
+    watchdog = setInterval(function () {
+      if (finished) return;
+      var now = Date.now();
+      var t = video.currentTime || 0;
+      if (t > lastT + 0.05) { lastT = t; lastMove = now; }
+      var quick = document.getElementById('quick').checked;
+      var quickSecs = +document.getElementById('quickSecs').value || 15;
+      if (quick && t >= quickSecs) { finishVariant('ok', 'quick ' + t.toFixed(1) + 's'); return; }
+      if (now - lastMove > STALL_LIMIT) {
+        finishVariant('stall', 'nessun avanzamento ' + ((now - lastMove) / 1000).toFixed(0) + 's @ ' + t.toFixed(1) + 's');
+      }
+    }, 1000);
+  }
+
+  // Eventi dash.js --------------------------------------------------------
+  player.on(E.PLAYBACK_ENDED, function () {
+    log('PLAYBACK_ENDED @ ' + (video.currentTime || 0).toFixed(1) + 's');
+    finishVariant('ok', 'ended ' + (video.currentTime || 0).toFixed(1) + 's');
+  });
+  player.on(E.ERROR, function (e) {
+    var m = (e && e.error && (e.error.message || e.error.code)) || JSON.stringify(e && e.error) || 'ERROR';
+    log('ERROR: ' + m);
+    finishVariant('error', String(m).substr(0, 60));
+  });
+  player.on(E.PLAYBACK_ERROR, function (e) {
+    log('PLAYBACK_ERROR: ' + JSON.stringify(e && e.error).substr(0, 120));
+    finishVariant('error', 'playback');
+  });
+  player.on(E.PLAYBACK_STALLED, function () { log('PLAYBACK_STALLED'); });
+  player.on(E.PERIOD_SWITCH_COMPLETED, function (e) {
+    var idx = e && e.toStreamInfo ? e.toStreamInfo.index : '?';
+    log('  period switch -> #' + idx);
+  });
+
+  // Controlli -------------------------------------------------------------
+  document.getElementById('playAll').onclick = function () {
+    results = {}; runAll = true; log('=== Play all (' + VARIANTS.length + ' varianti) ===');
+    startVariant(0);
+  };
+  document.getElementById('skip').onclick = function () {
+    if (current >= 0) finishVariant('stall', 'skip manuale');
+  };
+  document.getElementById('stop').onclick = function () {
+    runAll = false; clearWatchdog(); finished = true;
+    try { player.attachSource(null); } catch (e) {}
+    video.pause(); log('Stop.');
+  };
+  document.getElementById('clearLog').onclick = function () { logEl.value = ''; };
+
+  renderList(); renderSummary();
+</script>
+</body>
+</html>
