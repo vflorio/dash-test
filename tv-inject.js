@@ -3,7 +3,6 @@
 
     var CONFIG = {
         urls: [
-            "https://vflorio.github.io/dash-test/out/v10_single_missing_lang.mpd",
             "https://vflorio.github.io/dash-test/out/v00_baseline.mpd",
             "https://vflorio.github.io/dash-test/out/v01_consistent_audio_lang.mpd",
             "https://vflorio.github.io/dash-test/out/v02_progressive_no_scantype.mpd",
@@ -14,6 +13,7 @@
             "https://vflorio.github.io/dash-test/out/v07_missing_lang_attr.mpd",
             "https://vflorio.github.io/dash-test/out/v08_many_periods.mpd",
             "https://vflorio.github.io/dash-test/out/v09_faithful_v2.mpd",
+            "https://vflorio.github.io/dash-test/out/v10_single_missing_lang.mpd",
         ],
 
         backend: "html5", advanceAfter: 0, stallTimeout: 15, gap: 1.5, loop: false
