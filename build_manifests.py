@@ -24,6 +24,31 @@ BUILD = os.path.join(ROOT, "build")
 OUT = os.path.join(ROOT, "out")
 
 
+def _resolve_base_url() -> str:
+    """BaseURL assoluta opzionale per hosting remoto (GitHub raw / Pages).
+
+    Uso:
+      DASH_BASE_URL="https://raw.githubusercontent.com/vflorio/dash-test/main/" \\
+        python3 build_manifests.py
+      python3 build_manifests.py --base-url https://vflorio.github.io/dash-test/
+    Vuota => BaseURL relativa "../build/<gruppo>/" (hosting locale).
+    """
+    val = os.environ.get("DASH_BASE_URL", "")
+    argv = sys.argv[1:]
+    for i, a in enumerate(argv):
+        if a == "--base-url" and i + 1 < len(argv):
+            val = argv[i + 1]
+        elif a.startswith("--base-url="):
+            val = a.split("=", 1)[1]
+    val = val.strip()
+    if val and not val.endswith("/"):
+        val += "/"
+    return val
+
+
+BASE_URL = _resolve_base_url()
+
+
 def q(tag: str) -> str:
     return f"{{{NS}}}{tag}"
 
@@ -41,7 +66,7 @@ class Group:
 
     def __init__(self, name: str):
         self.name = name
-        self.baseurl = f"../build/{name}/"
+        self.baseurl = f"{BASE_URL}build/{name}/" if BASE_URL else f"../build/{name}/"
         mpd_path = os.path.join(BUILD, name, "stream.mpd")
         if not os.path.exists(mpd_path):
             raise FileNotFoundError(mpd_path)
@@ -380,8 +405,16 @@ VARIANTS = [
             content_lang="pol", ad_lang=None, scan="interlaced"),
     },
 ]
+
+
 def main() -> int:
     os.makedirs(OUT, exist_ok=True)
+    if BASE_URL:
+        print(f"  BaseURL assoluta: {BASE_URL}build/<gruppo>/")
+        if "github.com" in BASE_URL and "/blob/" in BASE_URL:
+            print("  [ATTENZIONE] URL 'blob' = pagina HTML, non il file binario. "
+                  "Usa raw.githubusercontent.com/<user>/<repo>/<branch>/ "
+                  "oppure GitHub Pages.")
     generated = []
     for spec in VARIANTS:
         try:
