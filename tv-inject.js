@@ -3,6 +3,7 @@
 
     var CONFIG = {
         urls: [
+            "https://vflorio.github.io/dash-test/out/v10_single_missing_lang.mpd",
             "https://vflorio.github.io/dash-test/out/v00_baseline.mpd",
             "https://vflorio.github.io/dash-test/out/v01_consistent_audio_lang.mpd",
             "https://vflorio.github.io/dash-test/out/v02_progressive_no_scantype.mpd",
@@ -29,7 +30,7 @@
             "position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483600;" +
             "pointer-events:none;font-family:monospace;");
         var banner = el("div",
-            "position:absolute;left:40px;top:30px;right:40px;padding:10px 16px;" +
+            "position:absolute;left:40px;top:200px;right:40px;padding:10px 16px;" +
             "background:rgba(0,0,0,.72);color:#fff;font-size:26px;line-height:1.3;" +
             "border-left:8px solid #1d6fe0;border-radius:4px;", root);
         var logBox = el("div",

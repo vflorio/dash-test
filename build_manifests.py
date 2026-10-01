@@ -404,6 +404,23 @@ VARIANTS = [
             5, "content_ildct_heaac", "ad_ildct_heaac",
             content_lang="pol", ad_lang=None, scan="interlaced"),
     },
+    {
+        "name": "v10_single_missing_lang",
+        "desc": "Replica del TERZO MPD rotto (1d68): 8 periodi tutti "
+                "interlacciati HE-AAC con @lang=pol OVUNQUE tranne UN singolo "
+                "spot DAI senza @lang. Isola 'un periodo anomalo in una "
+                "sequenza altrimenti coerente'. ATTESO: fallisce su Samsung.",
+        "periods": [
+            {"group": "content_ildct_heaac", "lang": "pol", "scanType": "interlaced"},
+            {"group": "content_ildct_heaac", "lang": "pol", "scanType": "interlaced"},
+            {"group": "ad_ildct_heaac", "scanType": "interlaced"},  # unico senza @lang
+            {"group": "content_ildct_heaac", "lang": "pol", "scanType": "interlaced"},
+            {"group": "ad_ildct_heaac", "lang": "pol", "scanType": "interlaced"},
+            {"group": "content_ildct_heaac", "lang": "pol", "scanType": "interlaced"},
+            {"group": "ad_ildct_heaac", "lang": "pol", "scanType": "interlaced"},
+            {"group": "ad_ildct_heaac", "lang": "pol", "scanType": "interlaced"},
+        ],
+    },
 ]
 
 

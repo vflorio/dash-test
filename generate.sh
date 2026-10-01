@@ -136,6 +136,7 @@ encode_group() {
     -b:v:0 1800k -maxrate:v:0 1800k -bufsize:v:0 3600k \
     -b:v:1 3584k -maxrate:v:1 3584k -bufsize:v:1 7168k \
     -b:v:2 8000k -maxrate:v:2 8000k -bufsize:v:2 16000k \
+    -level:v:0 3.1 -level:v:1 3.1 -level:v:2 4.0 \
     -x264opts "keyint=${GOP}:min-keyint=${GOP}:scenecut=0:open-gop=0${x264_il}" \
     -force_key_frames "expr:gte(t,n_forced*${SEG})" \
     $aopt -ar 48000 -ac 2 \
