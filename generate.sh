@@ -174,6 +174,7 @@ if [ "$MODE" != "manifests" ]; then
   encode_group "$WORK/content_master.mov" content_prog_heaac  he 0
   encode_group "$WORK/content_master.mov" content_ildct_aaclc lc 1
   encode_group "$WORK/content_master.mov" content_prog_aaclc  lc 0
+  encode_group "$WORK/content_master.mov" content_prog_mp3    mp3 0
   encode_group "$WORK/ad_master.mov"      ad_prog_heaac       he 0
   encode_group "$WORK/ad_master.mov"      ad_ildct_heaac      he 1
   encode_group "$WORK/ad_master.mov"      ad_prog_aaclc       lc 0
@@ -194,8 +195,8 @@ if [ -n "$FFPROBE" ] && [ "$MODE" != "manifests" ]; then
   echo "== Verifica codec (ffprobe) =="
   tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
   for g in content_ildct_heaac content_prog_heaac content_ildct_aaclc \
-           content_prog_aaclc ad_prog_heaac ad_ildct_heaac ad_prog_aaclc \
-           ad_prog_mp3 concat_prog_heaac; do
+           content_prog_aaclc content_prog_mp3 ad_prog_heaac ad_ildct_heaac \
+           ad_prog_aaclc ad_prog_mp3 concat_prog_heaac; do
     d="$BUILD/$g"
     [ -f "$d/chunk-stream3-00001.m4s" ] || { echo "  $g: (assente)"; continue; }
     cat "$d/init-stream2.m4s" "$d/chunk-stream2-00001.m4s" > "$tmp/v.mp4" 2>/dev/null

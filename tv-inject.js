@@ -3,6 +3,17 @@
 
     var CONFIG = {
         urls: [
+            "https://vflorio.github.io/dash-test/out/v13_allmp3_single_period.mpd",
+            "https://vflorio.github.io/dash-test/out/v12_allmp3_multiperiod.mpd",
+            "https://vflorio.github.io/dash-test/out/v11_aaclc_then_mp3.mpd",
+            /*
+            "https://vflorio.github.io/dash-test/out/3ba5-bde8-4431-998b-9093fb1ec319/stream.mpd",
+            "http://daimanifests.enhanced.live/s3/prod-wbd/3cb5b58b22528fa3250d9143922c2fa36f4ce0cf/CAMUFLXVARIA15/manifest.mpd"
+            "http://192.168.0.124:8000/stream.mpd",
+            "http://vflorio.iliadboxos.it:18080/stream.mpd",
+            "http://hbbtv.prod-wbd.serversideai.com/hbbtv/i4/media/16/2/3/e/4/3ba5-bde8-4431-998b-9093fb1ec319.mpd"
+            "http://81.56.100.216:18080/stream.mpd",
+            "https://vflorio.github.io/dash-test/out/real/stream.mpd",
             "https://vflorio.github.io/dash-test/out/v00_baseline.mpd",
             "https://vflorio.github.io/dash-test/out/v01_consistent_audio_lang.mpd",
             "https://vflorio.github.io/dash-test/out/v02_progressive_no_scantype.mpd",
@@ -14,6 +25,7 @@
             "https://vflorio.github.io/dash-test/out/v08_many_periods.mpd",
             "https://vflorio.github.io/dash-test/out/v09_faithful_v2.mpd",
             "https://vflorio.github.io/dash-test/out/v10_single_missing_lang.mpd",
+            */
         ],
 
         backend: "html5", advanceAfter: 0, stallTimeout: 15, gap: 1.5, loop: false
@@ -39,7 +51,11 @@
             "font-size:18px;line-height:1.35;border-radius:4px;white-space:pre-wrap;", root);
         var lines = [];
         function setBanner(html, color) {
-            banner.innerHTML = html;
+            try {
+                banner.innerHTML = html;
+            } catch (e) {
+                banner.textContent = String(html).replace(/<[^>]*>/g, "");
+            }
             banner.style.borderLeftColor = color || "#1d6fe0";
         }
         function log(msg) {
@@ -50,7 +66,7 @@
             logBox.textContent = lines.join("\n");
             try { console.log("[dashTest] " + msg); } catch (e) { }
         }
-        return { setBanner: setBanner, log: log, root: root };
+        return { setBanner: setBanner, log: log, root: root, destroy: function () { try { root.parentNode && root.parentNode.removeChild(root); } catch (e) { } } };
     })();
 
     function log(m) { ui.log(m); }
@@ -69,11 +85,35 @@
                 ob.style.cssText = "position:absolute;left:-10px;top:-10px;width:1px;height:1px";
                 document.body.appendChild(ob);
                 vbs = [ob];
+            } catch (e) { console.log("video/broadcast non creabile: " + e); return; }
+        }
+        for (var i = 0; i < vbs.length; i++) {
+            var vb = vbs[i];
+            ["stop",
+
+            ].forEach(function (m) {
+                try {
+                    if (typeof vb[m] === "function") { vb[m](); console.log("broadcast." + m + "()"); }
+                } catch (e) { console.log("broadcast." + m + " err: " + e); }
+            });
+        }
+    }
+
+    function returnToBroadcast() {
+        var vbs = document.querySelectorAll('object[type="video/broadcast"]');
+        if (!vbs.length) {
+            try {
+                var ob = document.createElement("object");
+                ob.type = "video/broadcast";
+                ob.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;z-index:0;";
+                document.body.appendChild(ob);
+                vbs = [ob];
             } catch (e) { log("video/broadcast non creabile: " + e); return; }
         }
         for (var i = 0; i < vbs.length; i++) {
             var vb = vbs[i];
-            ["stop", "release", "releaseScalers"].forEach(function (m) {
+            try { vb.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;z-index:0;"; } catch (e) { }
+            ["bindToCurrentChannel"].forEach(function (m) {
                 try {
                     if (typeof vb[m] === "function") { vb[m](); log("broadcast." + m + "()"); }
                 } catch (e) { log("broadcast." + m + " err: " + e); }
@@ -165,6 +205,7 @@
         this.lastT = 0;
         this.lastMove = 0;
         this.finished = false;
+        this.hadError = false;
     }
 
     Controller.prototype.makeBackend = function () {
@@ -179,6 +220,7 @@
         if (this.finished) return;
         this.finished = true;
         this.clearWatch();
+        if (status === "error" || status === "stall") this.hadError = true;
         var url = this.urls[this.i];
         log(shortUrl(url) + " => " + status.toUpperCase() + (note ? " (" + note + ")" : ""));
         var self = this;
@@ -193,6 +235,14 @@
             ui.setBanner("&#10003; SEQUENZA COMPLETATA (" + this.urls.length + " URL)", "#2ecc71");
             log("=== fine sequenza ===");
             return;
+            if (!this.hadError) {
+                if (this.backend) { try { this.backend.stop(); } catch (e) { } try { this.backend.destroy(); } catch (e) { } this.backend = null; }
+                log("nessun errore: ritorno al broadcast");
+                returnToBroadcast();
+                try { ui.destroy(); } catch (e) { }
+                try { delete window.__dashTest; } catch (e) { window.__dashTest = undefined; }
+            }
+            return;
         }
         var url = this.urls[this.i];
         this.finished = false;
@@ -200,7 +250,7 @@
         this.lastMove = Date.now();
 
         ui.setBanner("&#9654; TEST " + (this.i + 1) + "/" + this.urls.length +
-            " &mdash; " + shortUrl(url) + " &mdash; <span style='color:#ffd23f'>PLAYING</span>");
+            " &#8212; " + shortUrl(url) + " &#8212; <span style='color:#ffd23f'>PLAYING</span>");
         log("> " + url);
 
         if (!this.backend) {

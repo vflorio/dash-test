@@ -418,6 +418,28 @@ VARIANTS = [
         ],
     },
     {
+        "name": "v12_allmp3_multiperiod",
+        "desc": "Replica sintetica fedele dello stream reale: DUE periodi "
+                "entrambi con audio MP3 (mp4a.69), progressivi, lingua coerente. "
+                "Nessun AAC da nessuna parte (come il DAI reale). Isola "
+                "l'ipotesi 'e' l'MP3 in se', non la transizione AAC->MP3'. "
+                "ATTESO: se fallisce come v11, la colpa e' l'MP3, non il cambio.",
+        "periods": [
+            {"group": "content_prog_mp3", "lang": "und"},
+            {"group": "ad_prog_mp3", "lang": "und"},
+        ],
+    },
+    {
+        "name": "v13_allmp3_single_period",
+        "desc": "UN SOLO periodo con audio MP3 (mp4a.69), progressivo. Se "
+                "fallisce anche questo, l'MP3 rompe a prescindere dal "
+                "multi-periodo; se passa, il problema e' l'MP3 AL CAMBIO periodo "
+                "(re-init decoder). Triangola v12 vs transizione.",
+        "periods": [
+            {"group": "content_prog_mp3", "lang": "und"},
+        ],
+    },
+    {
         "name": "v10_single_missing_lang",
         "desc": "Replica del TERZO MPD rotto (1d68): 8 periodi tutti "
                 "interlacciati HE-AAC con @lang=pol OVUNQUE tranne UN singolo "

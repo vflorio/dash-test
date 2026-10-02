@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DASH debug - 3ba5 clone</title>
+<style>
+  html,body { margin:0; padding:0; background:#000; color:#eee;
+              font-family: ui-monospace, Consolas, monospace; }
+  #video { position:absolute; left:0; top:0; width:50%; height:50%;
+           background:#000; object-fit:contain; }
+  #status { position:absolute; left:0; top:50%; width:50%; height:50%;
+            box-sizing:border-box; padding:8px 10px; font-size:18px;
+            line-height:1.4; background:#0a0a0a; border-top:2px solid #333;
+            overflow:hidden; }
+  #status b { color:#ffd23f; }
+  #status .per { color:#2ecc71; font-weight:bold; }
+  #log { position:absolute; right:0; top:0; width:50%; height:100%;
+         box-sizing:border-box; padding:6px 8px; font-size:15px; line-height:1.3;
+         background:#000; color:#9f9; overflow-y:auto; white-space:pre-wrap;
+         word-break:break-word; border-left:2px solid #222; }
+  #log .e { color:#ff6b6b; }
+  #log .w { color:#ffd23f; }
+  #log .p { color:#6cf; font-weight:bold; }
+  #log .ev { color:#9f9; }
+  #log .sys { color:#888; }
+  #bar { position:absolute; left:0; bottom:0; width:50%;
+         background:rgba(0,0,0,.6); padding:4px 6px; font-size:13px; }
+  #bar a, #bar button { color:#eee; background:#222; border:1px solid #444;
+         padding:3px 7px; margin-right:4px; text-decoration:none;
+         border-radius:3px; cursor:pointer; font-size:13px; }
+</style>
+</head>
+<body>
+<video id="video" autoplay muted playsinline></video>
+<div id="status">init...</div>
+<div id="log"></div>
+<div id="bar">
+  <span id="ver"></span>
+  <a href="?v=4">dashjs v4</a>
+  <a href="?v=3">dashjs v3</a>
+  <a href="?v=cdn">CDN latest</a>
+  <button id="clear">clear log</button>
+</div>
+
+<script>
+/* ------------------------------------------------------------------ *
+ * ES5-only glue code (HbbTV browsers are old). No arrow fns, no let.  *
+ * On-screen log because smart TVs have no devtools.                   *
+ * ------------------------------------------------------------------ */
+(function () {
+  "use strict";
+
+  var MANIFEST = "stream.mpd";
+  var MAX_LINES = 400;
+
+  var logEl = document.getElementById("log");
+  var statusEl = document.getElementById("status");
+  var verEl = document.getElementById("ver");
+  var lineCount = 0;
+
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function ts() {
+    var d = new Date();
+    return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" +
+           pad(d.getSeconds()) + "." +
+           ("00" + d.getMilliseconds()).slice(-3);
+  }
+
+  function append(cls, msg) {
+    var div = document.createElement("div");
+    div.className = cls;
+    div.textContent = "[" + ts() + "] " + msg;
+    logEl.appendChild(div);
+    lineCount++;
+    if (lineCount > MAX_LINES) {
+      logEl.removeChild(logEl.firstChild);
+      lineCount--;
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function log(m)  { append("ev",  m); }
+  function sys(m)  { append("sys", m); }
+  function warn(m) { append("w",   "WARN " + m); }
+  function err(m)  { append("e",   "ERR  " + m); }
+  function per(m)  { append("p",   ">>> " + m); }
+
+  document.getElementById("clear").onclick = function () {
+    logEl.innerHTML = ""; lineCount = 0;
+  };
+
+  /* capture anything dash.js (or the browser) writes to the console */
+  function teeConsole(name, cls) {
+    var orig = window.console && console[name];
+    if (!window.console) window.console = {};
+    console[name] = function () {
+      var parts = [];
+      for (var i = 0; i < arguments.length; i++) {
+        var a = arguments[i];
+        try {
+          parts.push(typeof a === "object" ? JSON.stringify(a) : String(a));
+        } catch (e) { parts.push(String(a)); }
+      }
+      append(cls, "console." + name + ": " + parts.join(" "));
+      if (orig && orig.apply) { try { orig.apply(console, arguments); } catch (e) {} }
+    };
+  }
+  teeConsole("error", "e");
+  teeConsole("warn",  "w");
+  /* dash.js DEBUG logs go through console.log/info/debug - tee them too */
+  teeConsole("log",   "sys");
+  teeConsole("info",  "sys");
+  teeConsole("debug", "sys");
+
+  window.onerror = function (msg, src, line, col, e) {
+    err("window.onerror: " + msg + " @ " + (src || "?") + ":" + line + ":" + col);
+    return false;
+  };
+  window.addEventListener("unhandledrejection", function (ev) {
+    err("unhandledrejection: " + (ev && ev.reason ? ev.reason : ev));
+  });
+
+  /* ---- pick dash.js build via ?v= ---- */
+  function qp(name) {
+    var m = new RegExp("[?&]" + name + "=([^&]+)").exec(location.search);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  var v = qp("v") || "4";
+  var srcUrl;
+  if (v === "3") srcUrl = "dash.v3.2.0.min.js";
+  else if (v === "cdn") srcUrl = "https://cdn.dashjs.org/latest/dash.all.min.js";
+  else srcUrl = "dash.v4.7.4.min.js";
+  verEl.textContent = "build: " + srcUrl + "  |  ";
+  sys("loading dash.js: " + srcUrl);
+
+  var s = document.createElement("script");
+  s.src = srcUrl;
+  s.onload = function () { sys("dash.js script loaded"); boot(); };
+  s.onerror = function () { err("FAILED to load dash.js from " + srcUrl); };
+  document.head.appendChild(s);
+
+  /* ------------------------------------------------------------------ */
+  var player = null;
+  var video = document.getElementById("video");
+  var curPeriod = -1;
+
+  function streamInfoStr(si) {
+    if (!si) return "(none)";
+    return "idx=" + si.index + " id=" + si.id +
+           " start=" + fmt(si.start) + "s dur=" + fmt(si.duration) + "s" +
+           (si.isLast ? " [LAST]" : "");
+  }
+  function fmt(n) {
+    if (n === undefined || n === null || isNaN(n)) return "?";
+    return (Math.round(n * 100) / 100);
+  }
+
+  function boot() {
+    if (!window.dashjs || !dashjs.MediaPlayer) {
+      err("dashjs global missing after load"); return;
+    }
+    sys("dashjs version: " + (dashjs.Version || (dashjs.MediaPlayer && dashjs.MediaPlayer().getVersion && dashjs.MediaPlayer().getVersion()) || "?"));
+
+    player = dashjs.MediaPlayer().create();
+
+    /* maximum verbosity */
+    try {
+      player.updateSettings({
+        debug: { logLevel: dashjs.Debug ? dashjs.Debug.LOG_LEVEL_DEBUG : 5 },
+        streaming: {
+          scheduling: { scheduleWhilePaused: true },
+          buffer: { fastSwitchEnabled: true }
+        }
+      });
+    } catch (e) { warn("updateSettings failed: " + e); }
+
+    wireEvents();
+
+    try {
+      player.initialize(video, MANIFEST, true /* autoplay */);
+      sys("player.initialize(" + MANIFEST + ", autoplay=true)");
+    } catch (e) {
+      err("initialize threw: " + e);
+    }
+  }
+
+  function evName(key) { return key; }
+
+  function wireEvents() {
+    var E = dashjs.MediaPlayer.events;
+
+    /* generic: subscribe to EVERY event dash.js exposes */
+    var hooked = 0;
+    for (var k in E) {
+      if (!E.hasOwnProperty(k)) continue;
+      (function (name) {
+        player.on(name, function (e) { onAny(name, e); });
+      })(E[k]);
+      hooked++;
+    }
+    sys("subscribed to " + hooked + " dash.js events");
+
+    /* native media element events too */
+    ["loadedmetadata","play","playing","pause","waiting","stalled",
+     "seeking","seeked","ended","error","canplay","canplaythrough",
+     "ratechange","durationchange"].forEach(function (ev) {
+      video.addEventListener(ev, function () {
+        if (ev === "error") {
+          var me = video.error || {};
+          err("video.error code=" + me.code + " " + (me.message || ""));
+        } else {
+          sys("video." + ev + " t=" + fmt(video.currentTime));
+        }
+      }, false);
+    });
+  }
+
+  /* highlight the interesting events; everything else goes to sys/log */
+  function onAny(name, e) {
+    switch (name) {
+      case "manifestLoaded":
+        describeManifest(e);
+        return;
+      case "streamInitialized":
+      case "streamInitializing":
+        per(name + ": " + streamInfoStr(e && (e.streamInfo || e.toStreamInfo)));
+        return;
+      case "periodSwitchStarted":
+        per("PERIOD SWITCH STARTED  from " +
+            streamInfoStr(e && e.fromStreamInfo) + "  ->  " +
+            streamInfoStr(e && e.toStreamInfo));
+        return;
+      case "periodSwitchCompleted":
+        per("PERIOD SWITCH COMPLETED  now " +
+            streamInfoStr(e && e.toStreamInfo));
+        return;
+      case "error":
+      case "playbackError":
+        reportError(name, e);
+        return;
+      case "bufferStateChanged":
+        warn("bufferStateChanged " + (e && e.mediaType) + " -> " +
+             (e && e.state) + " @t=" + fmt(video.currentTime));
+        return;
+      case "bufferLevelUpdated":
+        return; /* too noisy; shown in status panel */
+      case "playbackWaiting":
+        warn("playbackWaiting @t=" + fmt(video.currentTime));
+        return;
+      case "playbackStalled":
+        warn("playbackStalled @t=" + fmt(video.currentTime));
+        return;
+      case "fragmentLoadingAbandoned":
+        warn("fragmentLoadingAbandoned " + (e && e.mediaType) +
+             " " + (e && e.request && e.request.url));
+        return;
+      case "fragmentLoadingCompleted":
+        var req = e && e.request;
+        if (req && req.type === "InitializationSegment") {
+          log("initSeg loaded " + req.mediaType + " period=" +
+              (req.mediaInfo && req.mediaInfo.streamInfo && req.mediaInfo.streamInfo.index) +
+              " " + shortUrl(req.url));
+        }
+        return;
+      case "qualityChangeRequested":
+      case "qualityChangeRendered":
+        log(name + " " + (e && e.mediaType) + " " +
+            (e && (e.oldQuality)) + "->" + (e && e.newQuality));
+        return;
+      case "playbackTimeUpdated":
+      case "metricChanged":
+      case "metricsChanged":
+      case "playbackProgress":
+        return; /* suppressed, status panel covers these */
+      default:
+        log("ev " + name +
+            (e && e.mediaType ? " [" + e.mediaType + "]" : ""));
+        return;
+    }
+  }
+
+  function shortUrl(u) {
+    if (!u) return "";
+    var parts = String(u).split("/");
+    return parts.slice(-2).join("/");
+  }
+
+  function reportError(name, e) {
+    var msg = name.toUpperCase() + ": ";
+    if (e && e.error) {
+      if (typeof e.error === "object") {
+        msg += "code=" + e.error.code + " message=" + e.error.message;
+        if (e.error.data) {
+          try { msg += " data=" + JSON.stringify(e.error.data); } catch (x) {}
+        }
+      } else {
+        msg += e.error;
+      }
+    } else if (e && e.event) {
+      msg += JSON.stringify(e.event);
+    } else {
+      try { msg += JSON.stringify(e); } catch (x) { msg += String(e); }
+    }
+    err(msg + "  @t=" + fmt(video.currentTime) + " period=" + curPeriod);
+  }
+
+  function describeManifest(e) {
+    var m = e && e.data;
+    if (!m) { log("manifestLoaded (no data)"); return; }
+    var periods = m.Period_asArray || m.Period || [];
+    if (!periods.length && m.Period) periods = [m.Period];
+    per("MANIFEST LOADED: type=" + (m.type || "?") +
+        " periods=" + periods.length +
+        " dur=" + (m.mediaPresentationDuration || "?"));
+    for (var i = 0; i < periods.length; i++) {
+      var p = periods[i];
+      var base = p.BaseURL_asArray ? p.BaseURL_asArray[0] :
+                 (p.BaseURL || "");
+      if (base && base.__text) base = base.__text;
+      var sets = p.AdaptationSet_asArray || p.AdaptationSet || [];
+      var kinds = [];
+      for (var j = 0; j < sets.length; j++) {
+        kinds.push(sets[j].contentType || sets[j].mimeType || "?");
+      }
+      log("  P" + i + " id=" + p.id + " dur=" + p.duration +
+          " start=" + p.start + " sets=[" + kinds.join(",") + "] " +
+          shortUrl(base));
+    }
+  }
+
+  /* ---- status panel polling ---- */
+  setInterval(function () {
+    if (!player || !video) return;
+    var lines = [];
+    var t = video.currentTime || 0;
+    lines.push("t=" + fmt(t) + "s  dur=" + fmt(video.duration) +
+               "  rate=" + video.playbackRate +
+               (video.paused ? "  PAUSED" : "  playing"));
+
+    var active = null;
+    try { active = player.getActiveStream && player.getActiveStream(); } catch (e) {}
+    var si = null;
+    try { si = active && active.getStreamInfo && active.getStreamInfo(); } catch (e) {}
+    if (si) {
+      if (si.index !== curPeriod) {
+        var prev = curPeriod;
+        curPeriod = si.index;
+        per("ACTIVE PERIOD CHANGED " + prev + " -> " + curPeriod +
+            "  (" + streamInfoStr(si) + ")");
+      }
+      lines.push("PERIOD idx=" + si.index + " id=" + si.id +
+                 " start=" + fmt(si.start) + " dur=" + fmt(si.duration));
+    }
+
+    try {
+      var bv = player.getBufferLength ? player.getBufferLength("video") : null;
+      var ba = player.getBufferLength ? player.getBufferLength("audio") : null;
+      lines.push("buffer  video=" + fmt(bv) + "s  audio=" + fmt(ba) + "s");
+    } catch (e) {}
+
+    try {
+      var dq = player.getDashMetrics && player.getDashMetrics();
+      if (dq && dq.getCurrentDroppedFrames) {
+        var df = dq.getCurrentDroppedFrames();
+        if (df) lines.push("droppedFrames=" + (df.droppedFrames || df));
+      }
+    } catch (e) {}
+
+    /* buffered ranges on the media element */
+    try {
+      var r = video.buffered, segs = [];
+      for (var i = 0; i < r.length; i++) {
+        segs.push("[" + fmt(r.start(i)) + "-" + fmt(r.end(i)) + "]");
+      }
+      lines.push("buffered " + (segs.join(" ") || "(empty)") +
+                 "  readyState=" + video.readyState +
+                 " networkState=" + video.networkState);
+    } catch (e) {}
+
+    statusEl.innerHTML =
+      lines.map(function (l) {
+        return l.replace(/^PERIOD/, "<span class='per'>PERIOD</span>")
+                .replace(/^(ERR|ACTIVE)/, "<b>$1</b>");
+      }).join("<br>");
+  }, 500);
+
+  sys("page ready, OS=" + navigator.userAgent);
+})();
+</script>
+</body>
+</html>
