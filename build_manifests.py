@@ -405,6 +405,19 @@ VARIANTS = [
             content_lang="pol", ad_lang=None, scan="interlaced"),
     },
     {
+        "name": "v11_aaclc_then_mp3",
+        "desc": "Caso 'rotto' costruito al contrario: Period0 audio AAC-LC "
+                "(mp4a.40.2), Period1 audio MP3 (mp4a.69) - stesso cambio di "
+                "codec audio al period boundary trovato nel DAI reale. Tutto il "
+                "resto identico (progressivo, lingua coerente). Isola l'ipotesi "
+                "'cambio codec audio AAC->MP3 tra periodi rompe la TV'. "
+                "ATTESO: fallisce su Samsung al 2o periodo.",
+        "periods": [
+            {"group": "content_prog_aaclc", "lang": "und"},
+            {"group": "ad_prog_mp3", "lang": "und"},
+        ],
+    },
+    {
         "name": "v10_single_missing_lang",
         "desc": "Replica del TERZO MPD rotto (1d68): 8 periodi tutti "
                 "interlacciati HE-AAC con @lang=pol OVUNQUE tranne UN singolo "

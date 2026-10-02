@@ -121,6 +121,9 @@ encode_group() {
     aopt="-c:a libfdk_aac -profile:a aac_he -b:a 96k"
   elif [ "$aprof" = "he" ]; then
     aopt="-c:a aac -b:a 96k"
+  elif [ "$aprof" = "mp3" ]; then
+    # MP3 in fMP4 -> codecs="mp4a.69" (objectType 0x6B), come il DAI reale.
+    aopt="-c:a libmp3lame -b:a 96k"
   else
     aopt="-c:a ${AAC_ENC} -b:a 128k"
   fi
@@ -174,6 +177,7 @@ if [ "$MODE" != "manifests" ]; then
   encode_group "$WORK/ad_master.mov"      ad_prog_heaac       he 0
   encode_group "$WORK/ad_master.mov"      ad_ildct_heaac      he 1
   encode_group "$WORK/ad_master.mov"      ad_prog_aaclc       lc 0
+  encode_group "$WORK/ad_master.mov"      ad_prog_mp3         mp3 0
   encode_group "$WORK/concat_master.mov"  concat_prog_heaac   he 0
 fi
 
@@ -191,7 +195,7 @@ if [ -n "$FFPROBE" ] && [ "$MODE" != "manifests" ]; then
   tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
   for g in content_ildct_heaac content_prog_heaac content_ildct_aaclc \
            content_prog_aaclc ad_prog_heaac ad_ildct_heaac ad_prog_aaclc \
-           concat_prog_heaac; do
+           ad_prog_mp3 concat_prog_heaac; do
     d="$BUILD/$g"
     [ -f "$d/chunk-stream3-00001.m4s" ] || { echo "  $g: (assente)"; continue; }
     cat "$d/init-stream2.m4s" "$d/chunk-stream2-00001.m4s" > "$tmp/v.mp4" 2>/dev/null
